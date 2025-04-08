@@ -48,7 +48,10 @@ def main_keyboard(user_id):
     markup.add(*buttons)
     return markup
 
-
+def deal_type_keyboard():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add(KeyboardButton("🏠 Аренда"), KeyboardButton("💰 Продажа"))
+    return markup
 
 def category_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -67,10 +70,6 @@ def agent_keyboard():
     markup.add(*formatted_agents)
     return markup
 
-def market_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    markup.add("🌍 Любой", "🏠 Внутренний", "🌐 Внешний")
-    return markup
 
 def yes_no_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -130,39 +129,31 @@ def start(message):
                     reply_markup=main_keyboard(message.from_user.id))
 
 
+
+def ask_deal_type(message, next_step):
+    bot.send_message(message.chat.id,
+                    "📊 Выберите тип сделки:",
+                    reply_markup=deal_type_keyboard())
+    bot.register_next_step_handler(message, next_step)
+
 @bot.message_handler(func=lambda m: m.text in ["👤 По агенту", "👤 Выбор по Агенту"])
-def select_agent(message):
+def select_agent_flow(message):
+    ask_deal_type(message, process_agent_selection)
+
+
+def process_agent_selection(message):
+    user_data = {'deal_type': message.text.replace("🏠 ", "").replace("💰 ", "")}
     bot.send_message(message.chat.id,
                     "👥 Выберите агента:",
                     reply_markup=agent_keyboard())
-    bot.register_next_step_handler(message, process_agent_selection)
+    bot.register_next_step_handler(message, process_agent_choice, user_data)
 
-def process_agent_selection(message):
-    user_data = {'agent': message.text.replace("👤 ", "")}
+def process_agent_choice(message, user_data):
+    user_data['agent'] = message.text.replace("👤 ", "")
     bot.send_message(message.chat.id,
                     "📦 Выберите категорию:",
                     reply_markup=category_keyboard())
-    bot.register_next_step_handler(message, select_market, user_data)
-
-def select_category(message):
-    user_data = {'agent': message.text}
-    bot.send_message(message.chat.id, "📦 Выберите категорию:", reply_markup=category_keyboard())
-    bot.register_next_step_handler(message, select_market, user_data)
-
-
-@bot.message_handler(func=lambda m: m.text in ["🏠 По категории", "🏠 Выбор по Категории"])
-def select_category_direct(message):
-    bot.send_message(message.chat.id,
-                    "📦 Выберите категорию:",
-                    reply_markup=category_keyboard())
-    bot.register_next_step_handler(message, select_market, {})
-
-
-def select_market(message, user_data):
-    user_data['category'] = message.text
-    bot.send_message(message.chat.id, "🌐 Выберите рынок:", reply_markup=market_keyboard())
-    bot.register_next_step_handler(message, process_search, user_data)
-
+    bot.register_next_step_handler(message, process_category_choice, user_data)
 
 def process_search(message, user_data):
     user_data['market'] = message.text
@@ -178,27 +169,47 @@ def show_results(message, filtered):
             time.sleep(0.5)
     bot.send_message(message.chat.id, "Главное меню:", reply_markup=main_keyboard(message.from_user.id))
 
+@bot.message_handler(func=lambda m: m.text in ["🏠 По категории", "🏠 Выбор по Категории"])
+def select_category_flow(message):
+    ask_deal_type(message, process_category_selection)
+
+def process_category_selection(message):
+    user_data = {'deal_type': message.text.replace("🏠 ", "").replace("💰 ", "")}
+    bot.send_message(message.chat.id,
+                    "📦 Выберите категорию:",
+                    reply_markup=category_keyboard())
+    bot.register_next_step_handler(message, process_category_choice, user_data)
+
+def process_category_choice(message, user_data):
+    user_data['category'] = message.text
+    filtered = filter_properties(user_data)
+    bot.send_message(message.chat.id,
+                    f"🔍 Найдено объектов: {len(filtered)}",
+                    reply_markup=yes_no_keyboard())
+    bot.register_next_step_handler(message, show_results, filtered)
 
 def filter_properties(data):
     result = []
-    market_map = {"Внутренний": "2", "Внешний": "1"}
-
     for prop in properties:
         match = True
 
-        # Фильтр по агенту
-        if 'agent' in data and prop.get('agent') != data['agent']:
-            match = False
+        # Фильтр по типу сделки
+        if 'deal_type' in data:
+            match &= (prop['type'].lower() == data['deal_type'].lower())
 
-        # Фильтр по категории и комнатам
-        category = data.get('category', '🏘️ Все')
-        if category != "🏘️ Все":
+        # Фильтр по агенту
+        if 'agent' in data:
+            match &= (prop['agent'] == data['agent'])
+
+        # Фильтр по категории
+        if 'category' in data and data['category'] != "🏘️ Все":
+            category = data['category']
             if category.startswith("🏠"):
                 room_count = category.split('-')[0][-1]
-                actual_rooms = prop.get('rooms', '0')
-                actual_rooms = actual_rooms if str(actual_rooms).isdigit() else '0'
-                match = (prop.get('category') == "квартира"
-                         and str(actual_rooms) == str(room_count))
+                match &= (
+                        prop['category'] == "квартира"
+                        and prop['rooms'] == room_count
+                )
             else:
                 category_map = {
                     "🌳 Участок": "участок",
@@ -207,23 +218,10 @@ def filter_properties(data):
                     "🚪 Комната": "комната",
                     "🏪 Коммерческая": "коммерческая"
                 }
-                match = (prop.get('category') == category_map.get(category, ""))
-        # Фильтр по рынку (исправлено)
-        selected_market = data.get('market', 'Любой')
-        if selected_market != "Любой":
-            # Убираем эмодзи из текста
-            clean_market = selected_market.split(' ')[-1]  # "🌐 Внешний" -> "Внешний"
-            required_status = market_map.get(clean_market, '1')
-
-            # Приводим к строковому типу
-            actual_status = str(prop.get('status', '1'))
-
-            if actual_status != required_status:
-                match = False
+                match &= (prop['category'] == category_map.get(category, ""))
 
         if match:
             result.append(prop)
-
     return result
 
 
@@ -232,16 +230,18 @@ def send_property_info(chat_id, prop):
         "квартира": "🏢", "участок": "🌳", "дом": "🏠",
         "гараж": "🚗", "комната": "🚪", "коммерческая": "🏪"
     }
-
     price = format(int(prop['price']), ',') if prop['price'].isdigit() else prop['price']
+    if prop['status'] == "1": status = "🟢 Внешний 🟢"
+    else:
+        status = "🟣 Внутренний 🟣"
 
-    address = prop.get('address', 'Не задан') or 'Не задан'
     text = (
         f"{emoji_map.get(prop['category'], '🏠')} {prop['category'].capitalize()} ({prop['type'].capitalize()})\n"
-        f"📏 Площадь: {prop['area']} м²\n"
+        f"📏 Площадь: {prop.get('area', 'N/A')} м²\n"
         f"🛏 Комнат: {prop['rooms']}\n"
-        f"💰 Цена: {price} RUB\n\n"
-        f"📍 Адрес: {address}\n"
+        f"💰 Цена: {price} RUB\n"
+        f"📍 Адрес: {prop['address']}\n\n"
+        f"🤝 Рынок: {status}\n\n"
         f"👤 Агент: {prop['agent']}\n"
         f"🔗 Ссылка: http://nn.nmls.ru/realty/view/{prop['id']}"
     )
@@ -251,9 +251,11 @@ def send_property_info(chat_id, prop):
 @bot.message_handler(func=lambda m: m.text == "🔄 Обновить данные")
 def update_data(message):
     if parse_xml(current_url):
-        bot.send_message(message.chat.id, "✅ Данные успешно обновлены!", reply_markup=main_keyboard(message.from_user.id))
+        bot.send_message(message.chat.id, "✅ Данные успешно обновлены!",
+                         reply_markup=main_keyboard(message.from_user.id))
     else:
-        bot.send_message(message.chat.id, "❌ Ошибка обновления! Проверьте ссылку.", reply_markup=main_keyboard(message.from_user.id))
+        bot.send_message(message.chat.id, "❌ Ошибка обновления! Проверьте ссылку.",
+                         reply_markup=main_keyboard(message.from_user.id))
 
 
 @bot.message_handler(func=lambda m: m.text == "⚙️ Изменить ссылку (Админ)" and m.from_user.id in ADMINS)
