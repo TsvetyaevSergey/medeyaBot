@@ -12,9 +12,9 @@ load_dotenv()
 
 # Конфигурация из .env
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMINS = list(map(int, os.getenv('ADMINS').split(',')))
-DEFAULT_URL = os.getenv('DEFAULT_URL')
-NAMESPACE = os.getenv('NAMESPACE')
+ADMINS = [784810066, 842949819]  # ID администраторов
+DEFAULT_URL = 'https://www.nmls.ru/data/feed/yandex/agency1003479.xml'
+NAMESPACE = '{http://webmaster.yandex.ru/schemas/feed/realty/2010-06}'
 
 # Инициализация бота
 bot = telebot.TeleBot(BOT_TOKEN)
