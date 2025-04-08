@@ -67,7 +67,7 @@ pip install -r requirements.txt
 # 4. Запуск бота
 #######################################
 echo "🚀 Запуск бота..."
-nohup python -u bot.py > bot.log 2>&1 &
+nohup python -u main.py > bot.log 2>&1 &
 echo $! > bot.pid
 
 echo "✅ Деплой успешно завершен! PID: $(cat bot.pid)"
