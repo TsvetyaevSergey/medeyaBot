@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 import xml.etree.ElementTree as ET
@@ -12,7 +14,7 @@ load_dotenv()
 
 # Конфигурация из .env
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMINS = [784810066, 842949819]  # ID администраторов
+ADMINS = [784810066]  # ID администраторов
 DEFAULT_URL = 'https://www.nmls.ru/data/feed/yandex/agency1003479.xml'
 NAMESPACE = '{http://webmaster.yandex.ru/schemas/feed/realty/2010-06}'
 
@@ -92,6 +94,15 @@ def safe_find(element, path, default=None):
 def parse_xml(url):
     global properties, agents
     try:
+        # Валидация URL
+        parsed_url = urlparse(url)
+        print(url)
+        print(parsed_url.scheme)
+        print(parsed_url.netloc)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            print(f"Ошибка: Некорректный URL '{url}'. Укажите схему (http/https)")
+            return False
+
         response = requests.get(url)
         root = ET.fromstring(response.content)
         new_properties = []
@@ -293,4 +304,9 @@ def save_new_url(message):
 
 if __name__ == '__main__':
     print("Бот запущен!")
-    bot.polling(none_stop=True)
+    while True:
+        try:
+            bot.polling(none_stop=True)
+        except Exception as e:
+            print(f"Ошибка при polling: {e}. Перезапуск через 10 секунд...")
+            time.sleep(10)
